@@ -33,7 +33,7 @@ extern ANDROID_ATOMIC_INLINE void android_memory_barrier()
 #if ANDROID_SMP == 0
     android_compiler_barrier();
 #else
-    __asm__ __volatile__ ("dmb" : : : "memory");
+    __asm__ __volatile__ ("dmb ish" : : : "memory");
 #endif
 }
 
@@ -42,7 +42,7 @@ extern ANDROID_ATOMIC_INLINE void android_memory_store_barrier()
 #if ANDROID_SMP == 0
     android_compiler_barrier();
 #else
-    __asm__ __volatile__ ("dmb st" : : : "memory");
+    __asm__ __volatile__ ("dmb ishst" : : : "memory");
 #endif
 }
 
