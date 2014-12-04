@@ -35,7 +35,7 @@ ifeq ($(strip $(BOARD_CHARGER_ENABLE_SUSPEND)),true)
 LOCAL_CFLAGS += -DCHARGER_ENABLE_SUSPEND
 endif
 
-LOCAL_C_INCLUDES := bootable/recovery
+LOCAL_C_INCLUDES := $(call project-path-for,recovery)
 
 LOCAL_STATIC_LIBRARIES := libbatteryservice libbinder libminui libpng libz libutils libstdc++ libcutils liblog libm libc
 
@@ -47,7 +47,7 @@ LOCAL_HAL_STATIC_LIBRARIES := libhealthd
 
 # Symlink /charger to /sbin/healthd
 LOCAL_POST_INSTALL_CMD := $(hide) mkdir -p $(TARGET_ROOT_OUT) \
-    && ln -sf /sbin/healthd $(TARGET_ROOT_OUT)/charger
+    && rm -f $(TARGET_ROOT_OUT)/charger && ln -sf /sbin/healthd $(TARGET_ROOT_OUT)/charger
 
 include $(BUILD_EXECUTABLE)
 
