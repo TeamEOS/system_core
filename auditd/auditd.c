@@ -45,6 +45,7 @@
 
 #include "libaudit.h"
 #include "audit_log.h"
+#include "audit_rules.h"
 
 /*
  * TODO:
@@ -60,9 +61,13 @@
 #define AUDITD_LOG_FILE AUDITD_LOG_DIR "/audit.log"
 #define AUDITD_OLD_LOG_FILE AUDITD_LOG_DIR "/audit.old"
 
+#define AUDITD_RULES_FILE "/data/misc/audit/audit.rules"
+
 #define AUDITD_MAX_LOG_FILE_SIZE (1024 * AUDITD_MAX_LOG_FILE_SIZEKB)
 
 static volatile int quit = 0;
+
+static audit_log *alog = NULL;
 
 static void signal_handler(int sig)
 {
@@ -71,6 +76,9 @@ static void signal_handler(int sig)
     case SIGTERM:
         quit = 1;
         break;
+    case SIGHUP:
+	audit_log_rotate(alog);
+	break;
     }
     return;
 }
@@ -135,7 +143,6 @@ int main(int argc, char *argv[])
     struct pollfd pfds;
     struct audit_reply rep;
     struct sigaction action;
-    audit_log *l = NULL;
 
     SLOGI("Starting up");
 
@@ -146,6 +153,7 @@ int main(int argc, char *argv[])
     sigemptyset(&action.sa_mask);
     action.sa_flags = 0;
     rc = sigaction(SIGINT, &action, NULL);
+    rc |= sigaction(SIGHUP, &action, NULL);
     if (rc < 0) {
         rc = errno;
         SLOGE("Failed on set signal handler: %s", strerror(errno));
@@ -171,8 +179,8 @@ int main(int argc, char *argv[])
         goto err;
     }
 
-    l = audit_log_open(AUDITD_LOG_FILE, AUDITD_OLD_LOG_FILE, AUDITD_MAX_LOG_FILE_SIZE);
-    if (!l) {
+    alog = audit_log_open(AUDITD_LOG_FILE, AUDITD_OLD_LOG_FILE, AUDITD_MAX_LOG_FILE_SIZE);
+    if (!alog) {
         SLOGE("Failed on audit_log_open");
         goto err;
     }
@@ -183,11 +191,21 @@ int main(int argc, char *argv[])
         goto err;
     }
 
+    if (audit_set_enabled(audit_fd, 1) < 0) {
+        rc = errno;
+        SLOGE("Failed on audit_set_enabled with error: %s", strerror(errno));
+        goto err;
+    }
+
+    if (audit_rules_read_and_add(audit_fd, AUDITD_RULES_FILE)) {
+        SLOGE("error reading audit rules: %s", strerror(errno));
+    }
+
     pfds.fd = audit_fd;
     pfds.events = POLLIN;
 
     if (check_kernel_log) {
-        audit_log_put_kmsg(l);
+        audit_log_put_kmsg(alog);
     }
 
     while (!quit) {
@@ -208,7 +226,7 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        audit_log_write(l, "type=%d msg=%.*s\n", rep.type, rep.len, rep.msg.data);
+        audit_log_write(alog, "type=%d msg=%.*s\n", rep.type, rep.len, rep.msg.data);
         /* Keep reading for events */
     }
 
@@ -218,6 +236,6 @@ err:
         audit_set_pid(audit_fd, 0, WAIT_NO);
         audit_close(audit_fd);
     }
-    audit_log_close(l);
+    audit_log_close(alog);
     return rc;
 }
