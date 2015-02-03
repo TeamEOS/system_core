@@ -228,8 +228,8 @@ static int set_tricolor_led(int on, int color)
         if ((color & leds[i].color) && (access(leds[i].path, R_OK | W_OK) == 0)) {
             fd = open(leds[i].path, O_RDWR);
             if (fd < 0) {
-                LOGE("Could not open red led node\n");
-                goto cleanup;
+                LOGE("Could not open led node %d\n", i);
+                continue;
             }
             if (on)
                 snprintf(buffer, sizeof(int), "%d\n", 255);
@@ -238,9 +238,7 @@ static int set_tricolor_led(int on, int color)
 
             if (write(fd, buffer, strlen(buffer)) < 0)
                 LOGE("Could not write to led node\n");
-cleanup:
-            if (fd >= 0)
-                close(fd);
+            close(fd);
         }
     }
 
@@ -253,7 +251,7 @@ static int set_battery_soc_leds(int soc)
     static int old_color = 0;
 
     for (i = 0; i < (int)ARRAY_SIZE(soc_leds); i++) {
-        if (soc < soc_leds[i].soc)
+        if (soc <= soc_leds[i].soc)
             break;
     }
     color = soc_leds[i].color;
@@ -283,17 +281,14 @@ static int set_backlight_on(void)
     fd = open(BACKLIGHT_PATH, O_RDWR);
     if (fd < 0) {
         LOGE("Could not open backlight node : %s\n", strerror(errno));
-        goto cleanup;
+        return 0;
     }
     LOGV("Enabling backlight\n");
     snprintf(buffer, sizeof(buffer), "%d\n", BACKLIGHT_ON_LEVEL);
     if (write(fd, buffer,strlen(buffer)) < 0) {
         LOGE("Could not write to backlight node : %s\n", strerror(errno));
-        goto cleanup;
     }
-cleanup:
-    if (fd >= 0)
-        close(fd);
+    close(fd);
 
     return 0;
 }
