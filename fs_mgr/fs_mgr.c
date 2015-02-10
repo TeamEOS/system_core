@@ -262,6 +262,8 @@ static int mount_with_alternatives(struct fstab *fstab, int start_idx, int *end_
     int i;
     int mount_errno = 0;
     int mounted = 0;
+    int cmp_len;
+    char *detected_fs_type;
 
     if (!end_idx || !attempted_idx || start_idx >= fstab->num_entries) {
       errno = EINVAL;
@@ -287,8 +289,16 @@ static int mount_with_alternatives(struct fstab *fstab, int start_idx, int *end_
             }
 
             if (fstab->recs[i].fs_mgr_flags & MF_CHECK) {
-                check_fs(fstab->recs[i].blk_device, fstab->recs[i].fs_type,
-                         fstab->recs[i].mount_point);
+                /* Skip file system check unless we are sure we are the right type */
+                detected_fs_type = blkid_get_tag_value(NULL, "TYPE", fstab->recs[i].blk_device);
+                if (detected_fs_type) {
+                    cmp_len = (!strncmp(detected_fs_type, "ext", 3) &&
+                            strlen(detected_fs_type) == 4) ? 3 : strlen(detected_fs_type);
+                    if (!strncmp(fstab->recs[i].fs_type, detected_fs_type, cmp_len)) {
+                        check_fs(fstab->recs[i].blk_device, fstab->recs[i].fs_type,
+                                 fstab->recs[i].mount_point);
+                    }
+                }
             }
             if (!__mount(fstab->recs[i].blk_device, fstab->recs[i].mount_point, &fstab->recs[i])) {
                 *attempted_idx = i;
@@ -329,7 +339,6 @@ int fs_mgr_mount_all(struct fstab *fstab)
     int mret = -1;
     int mount_errno = 0;
     int attempted_idx = -1;
-    char *detected_fs_type;
 
     if (!fstab) {
         return -1;
@@ -360,20 +369,6 @@ int fs_mgr_mount_all(struct fstab *fstab)
                 continue;
             }
         }
-
-        /* Skip fstab entries for partitions that we KNOW are wrong */
-        detected_fs_type = blkid_get_tag_value(NULL, "TYPE", fstab->recs[i].blk_device);
-        if (detected_fs_type) {
-            int cmp_len = strlen(detected_fs_type);
-            /* ext formats are mutually compatible by design */
-            if (!strncmp(detected_fs_type,"ext", 3) && cmp_len == 4) {
-                cmp_len = 3;
-            }
-            if (strncmp(fstab->recs[i].fs_type, detected_fs_type, cmp_len)) {
-                continue;
-            }
-        }
-
         int last_idx_inspected;
         mret = mount_with_alternatives(fstab, i, &last_idx_inspected, &attempted_idx);
         i = last_idx_inspected;
