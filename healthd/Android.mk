@@ -51,7 +51,7 @@ ifeq ($(strip $(BOARD_CHARGER_SHOW_PERCENTAGE)),true)
 LOCAL_CFLAGS += -DCHARGER_SHOW_PERCENTAGE
 endif
 
-LOCAL_C_INCLUDES := $(call project-path-for,recovery)
+LOCAL_C_INCLUDES := bootable/recovery
 
 LOCAL_STATIC_LIBRARIES := libbatteryservice libbinder libminui libpng libz libutils libstdc++ libcutils liblog libm libc
 
