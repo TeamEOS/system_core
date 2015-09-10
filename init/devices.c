@@ -47,7 +47,10 @@
 #include "ueventd_parser.h"
 #include "util.h"
 #include "log.h"
+
+#ifdef GZIP_SUPPORTED
 #include <zlib.h>
+#endif
 
 #define UNUSED __attribute__((__unused__))
 
@@ -943,6 +946,7 @@ static void handle_device_event(struct uevent *uevent)
     }
 }
 
+#ifdef GZIP_SUPPORTED
 static int load_firmware(int fw_fd, gzFile gz_fd, int loading_fd, int data_fd)
 {
     int ret = 0;
@@ -986,12 +990,60 @@ out:
 
     return ret;
 }
+#else
+static int load_firmware(int fw_fd, int loading_fd, int data_fd)
+{
+    struct stat st;
+    long len_to_copy;
+    int ret = 0;
+
+    if(fstat(fw_fd, &st) < 0)
+        return -1;
+    len_to_copy = st.st_size;
+
+    write(loading_fd, "1", 1);  /* start transfer */
+
+    while (len_to_copy > 0) {
+        char buf[PAGE_SIZE];
+        ssize_t nr;
+
+        nr = read(fw_fd, buf, sizeof(buf));
+        if(!nr)
+            break;
+        if(nr < 0) {
+            ret = -1;
+            break;
+        }
+
+        len_to_copy -= nr;
+        while (nr > 0) {
+            ssize_t nw = 0;
+
+            nw = write(data_fd, buf + nw, nr);
+            if(nw <= 0) {
+                ret = -1;
+                goto out;
+            }
+            nr -= nw;
+        }
+    }
+
+out:
+    if(!ret)
+        write(loading_fd, "0", 1);  /* successful end of transfer */
+    else
+        write(loading_fd, "-1", 2); /* abort transfer */
+
+    return ret;
+}
+#endif
 
 static int is_booting(void)
 {
     return access("/dev/.booting", F_OK) == 0;
 }
 
+#ifdef GZIP_SUPPORTED
 gzFile fw_gzopen(const char *fname, const char *mode)
 {
     char *file1 = NULL, *file2 = NULL, *file3 = NULL;
@@ -1026,13 +1078,16 @@ file1_free_out:
 out:
     return gz_fd;
 }
+#endif
 
 static void process_firmware_event(struct uevent *uevent)
 {
     char *root, *loading, *data, *file1 = NULL, *file2 = NULL, *file3 = NULL;
     int l, loading_fd, data_fd, fw_fd;
     int booting = is_booting();
+#ifdef GZIP_SUPPORTED
     gzFile gz_fd = NULL;
+#endif
 
     INFO("firmware: loading '%s' for '%s'\n",
          uevent->firmware, uevent->path);
@@ -1076,6 +1131,7 @@ try_loading_again:
         if (fw_fd < 0) {
             fw_fd = open(file3, O_RDONLY);
             if (fw_fd < 0) {
+#ifdef GZIP_SUPPORTED
                 gz_fd = fw_gzopen(uevent->firmware, "rb");
                 if (!gz_fd) {
                     if (booting || (access("/system/etc/firmware", F_OK) != 0)) {
@@ -1090,19 +1146,41 @@ try_loading_again:
                     write(loading_fd, "-1", 2);
                     goto data_close_out;
                 }
+#else
+                if (booting) {
+                        /* If we're not fully booted, we may be missing
+                         * filesystems needed for firmware, wait and retry.
+                         */
+                    usleep(100000);
+                    booting = is_booting();
+                    goto try_loading_again;
+                }
+                INFO("firmware: could not open '%s' %d\n", uevent->firmware, errno);
+                write(loading_fd, "-1", 2);
+                goto data_close_out;
+#endif
             }
         }
     }
 
+#ifdef GZIP_SUPPORTED
     if(!load_firmware(fw_fd, gz_fd, loading_fd, data_fd))
+#else
+    if(!load_firmware(fw_fd, loading_fd, data_fd))
+#endif
         INFO("firmware: copy success { '%s', '%s' }\n", root, uevent->firmware);
     else
         INFO("firmware: copy failure { '%s', '%s' }\n", root, uevent->firmware);
 
+#ifdef GZIP_SUPPORTED
     if (gz_fd)
         gzclose(gz_fd);
     else
         close(fw_fd);
+#else
+    close(fw_fd);
+#endif
+
 data_close_out:
     close(data_fd);
 loading_close_out:
