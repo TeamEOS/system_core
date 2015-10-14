@@ -302,7 +302,7 @@ static void show_help(const char *cmd)
                    "eg: '*:S <tag>' prints only <tag>, '<tag>:S' suppresses all <tag> log messages.\n"
                    "\nIf not specified on the command line, filterspec is set from ANDROID_LOG_TAGS.\n"
                    "\nIf not specified with -v on command line, format is set from ANDROID_PRINTF_LOG\n"
-                   "or defaults to \"threadtime\"\n\n");
+                   "or defaults to \"brief\"\n\n");
 }
 
 static int setLogFormat(const char * formatString)
@@ -787,7 +787,7 @@ int main(int argc, char **argv)
                                     logFormat);
             }
         } else {
-            setLogFormat("threadtime");
+            setLogFormat("brief");
         }
     }
 
